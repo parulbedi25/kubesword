@@ -1,0 +1,17 @@
+services:
+  kubesword:
+    build: .
+    image: kubesword:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      # Mount your kubeconfig read-only to manage local clusters:
+      # - KUBECONFIG=/home/node/.kube/config
+    volumes:
+      - ~/.kube:/home/node/.kube:ro
+      - kubesword-data:/home/node/.kubesword
+    restart: unless-stopped
+
+volumes:
+  kubesword-data:
