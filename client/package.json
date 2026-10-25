@@ -5,7 +5,7 @@
   "type": "module",
   "description": "KubeSword web UI — React dashboard for Kubernetes",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 5173",
+    "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test": "echo \"no client tests yet\""

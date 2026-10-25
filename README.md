@@ -26,21 +26,21 @@
 
 ## 🚀 Run it
 
-### Option A — Web (any browser): just two commands
+### Option A — Web (any browser): just two commands, no build
 
 ```bash
 npm install
-npm start          # builds once if needed, starts the server, opens your browser
-# → http://localhost:3001 (set PORT=... to change, NO_BROWSER=1 to skip auto-open)
+npm start          # runs the project straight from source (no build), opens your browser
+# → UI: http://localhost:5173  |  API: http://localhost:3001
+# (set PORT=... / CLIENT_PORT=... to change ports, NO_BROWSER=1 to skip auto-open)
 ```
 
-That's it — no extra dependencies, no Electron needed for the browser version.
-(`npm start -- --build` forces a rebuild.)
+That's it — `npm start` runs the API server from source plus the UI in dev mode with hot reload. No build step, no `dist`, no Electron needed.
 
-Development (hot reload UI + API):
+Need the optimized production build instead (single server bundle + compiled UI)?
 
 ```bash
-npm run dev        # client :5173 (proxies /api + /ws) + server :3001
+npm run web        # builds once and serves everything on http://localhost:3001
 ```
 
 Docker:
@@ -70,7 +70,7 @@ Notes:
 
 ### Troubleshooting
 
-- **Blank / stuck on "Loading"**: rebuild once with `npm run build` (or `npm start -- --build`), then hard-refresh (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>). The loading screen now reports startup failures instead of hanging silently — check the console (<kbd>F12</kbd>) for details.
+- **Blank / stuck on "Loading"**: with `npm start` (no-build mode) just hard-refresh (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>). The loading screen reports startup failures instead of hanging silently — check the console (<kbd>F12</kbd>) for details. If you use the production build (`npm run web`), rebuild once with `npm run build` first.
 - **`npm install` failing on the Electron download** (restricted networks): the browser version doesn't need Electron at all — set `ELECTRON_SKIP_BINARY_DOWNLOAD=1` and re-run install. You only need the Electron binary for `npm run desktop` / `npm run dist*`.
 
 ## 🔌 Connecting clusters
