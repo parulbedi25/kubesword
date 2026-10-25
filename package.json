@@ -96,14 +96,20 @@
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "minimumSystemVersion": "11.0.0"
+      "minimumSystemVersion": "11.0.0",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
       "iconSize": 100,
       "window": {
         "width": 540,
         "height": 380
-      }
+      },
+      "contents": [
+        { "x": 140, "y": 200, "type": "file" },
+        { "x": 400, "y": 200, "type": "link", "path": "/Applications" }
+      ]
     },
     "linux": {
       "target": [

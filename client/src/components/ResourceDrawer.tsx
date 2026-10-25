@@ -7,7 +7,8 @@ import { timeAgo, formatDate, podStatus, restarts } from '../lib/utils';
 import { Drawer, Tabs, Loading, ErrorBox, Kv, Badge, Modal } from './ui';
 import { YamlViewer } from './YamlViewer';
 import { LogsViewer } from './LogsViewer';
-import { TerminalView } from './TerminalView';
+// xterm is heavy — load it only when the terminal tab opens.
+const TerminalView = lazy(() => import('./TerminalView').then((m) => ({ default: m.TerminalView })));
 
 export function ResourceDrawer({
   kind, namespace, name, onClose,

@@ -65,8 +65,28 @@ Installers land in `release/`. CI (`.github/workflows/build.yml`) builds all OS 
 
 Notes:
 - The backend ships as a **single bundled file** (no `node_modules` in the package), so the DMG stays lean, launches fast, and works fully offline on Apple Silicon.
+- The UI is code-split per route: the initial download is ~270 kB of JS (gzipped ~90 kB); charts, terminal, and the YAML editor load on demand.
 - Run the desktop shell from source with `npm run desktop` (builds first via `npm run build` if needed).
 - Desktop dev mode (Electron + hot reload): `npm run dev:electron`.
+
+### Distributing the macOS app (Apple Silicon)
+
+Out of the box `npm run dist:mac` produces an **ad-hoc signed, hardened-runtime** `.dmg` with the required Apple Silicon entitlements (`build/entitlements.mac.plist` — JIT + executable memory for Electron's V8 engine, without which the app is killed at launch on M1/M2/M3/M4). It runs fine on your own Mac via right-click → Open.
+
+To distribute without Gatekeeper warnings, sign with a **Developer ID** certificate and notarize:
+
+```bash
+# 1. Install your "Developer ID Application" certificate in Keychain,
+#    then build (electron-builder picks it up automatically):
+npm run dist:mac
+
+# 2. Notarize the DMG:
+xcrun notarytool submit release/KubeSword-*-mac-arm64.dmg \
+  --apple-id you@example.com --team-id TEAMID --password app-specific-password --wait
+xcrun stapler staple release/KubeSword-*-mac-arm64.dmg
+```
+
+Or let electron-builder notarize automatically by setting `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` in the environment (add a `notarize` block under `build.mac` if you want it wired in — see the electron-builder docs).
 
 ### Troubleshooting
 

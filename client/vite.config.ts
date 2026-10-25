@@ -31,5 +31,13 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        // Stable vendor chunk: cached across deploys, parsed in parallel.
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
   },
 });
