@@ -9,6 +9,7 @@
 const { app, BrowserWindow, Menu, Tray, shell, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const net = require('net');
 const { spawn } = require('child_process');
 
@@ -17,6 +18,19 @@ let mainWindow = null;
 let serverChild = null;
 let serverPort = Number(process.env.KUBESWORD_PORT || 0);
 let tray = null;
+
+function errorPage(title, detail) {
+  const safe = String(detail || '').replace(/</g, '&lt;');
+  return `data:text/html,${encodeURIComponent(`<!doctype html><html><body style="background:#0a0e14;color:#e2e8f0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="max-width:560px;text-align:center"><h2>⚔️ ${title}</h2><p style="color:#94a3b8;font-size:14px;white-space:pre-wrap">${safe}</p></div></body></html>`)}`;
+}
+
+function viteDevServerUp(url, timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    const req = http.get(url, (res) => { res.resume(); resolve(true); });
+    req.on('error', () => resolve(false));
+    req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
+  });
+}
 
 function findFreePort() {
   return new Promise((resolve) => {
@@ -29,20 +43,27 @@ function findFreePort() {
 }
 
 function serverEntryCandidates() {
-  return [
+  // NOTE: the server ships as a single bundled file (server/dist/index.js)
+  // with zero runtime node_modules. It is unpacked from the asar so plain
+  // node (ELECTRON_RUN_AS_NODE) can always load it.
+  const unpacked = path.join(process.resourcesPath || '', 'app.asar.unpacked/server/dist/index.js');
+  const fromSource = [
     path.join(__dirname, '../server/dist/index.js'),
     path.join(__dirname, '../server/src/index.js'),
-    path.join(process.resourcesPath || '', 'server/dist/index.js'),
-    path.join(process.resourcesPath || '', 'app.asar.unpacked/server/dist/index.js'),
   ];
+  const fromAsar = [
+    unpacked,
+    path.join(process.resourcesPath || '', 'server/dist/index.js'),
+  ];
+  // Prefer the unpacked bundle when packaged; prefer the local build in dev.
+  return isDev ? [...fromSource, ...fromAsar] : [...fromAsar, ...fromSource];
 }
 
 async function startServer() {
   serverPort = serverPort || (await findFreePort());
   const entry = serverEntryCandidates().find((p) => { try { return fs.existsSync(p); } catch { return false; } });
   if (!entry) {
-    console.error('[kubesword] server entry not found. Tried:', serverEntryCandidates());
-    return null;
+    throw new Error(`local server bundle not found.\nTried:\n${serverEntryCandidates().join('\n')}\n\nRun "npm run build" and try again.`);
   }
   console.log(`[kubesword] starting server ${entry} on port ${serverPort}`);
   serverChild = spawn(process.execPath, [entry], {
@@ -87,19 +108,33 @@ async function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    if (url.startsWith('data:')) return;
+    console.error(`[kubesword] page failed to load (${code}): ${desc}`);
+    mainWindow?.loadURL(errorPage('KubeSword failed to load', `${desc}\n\nIf this keeps happening, run the web version instead:\n  npm install && npm start`));
+  });
 
-  if (isDev) {
-    const url = process.env.CLIENT_URL || 'http://localhost:5173';
-    console.log('[kubesword] dev mode, loading', url);
-    await mainWindow.loadURL(url);
-    if (process.env.OPEN_DEVTOOLS) mainWindow.webContents.openDevTools();
-  } else {
-    const port = await startServer();
-    if (!port) {
-      await mainWindow.loadURL('data:text/html,<h1>KubeSword failed to start the local server.</h1>');
+  try {
+    if (isDev) {
+      const viteUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+      if (await viteDevServerUp(viteUrl)) {
+        console.log('[kubesword] dev mode, loading', viteUrl);
+        await mainWindow.loadURL(viteUrl);
+      } else {
+        // No Vite dev server (e.g. plain `electron .` after `npm run build`):
+        // behave like the packaged app and serve the built UI locally.
+        console.log('[kubesword] no Vite dev server found — serving built app instead (run `npm run build` first if this fails)');
+        const port = await startServer();
+        await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+      }
+      if (process.env.OPEN_DEVTOOLS) mainWindow.webContents.openDevTools();
     } else {
+      const port = await startServer();
       await mainWindow.loadURL(`http://127.0.0.1:${port}`);
     }
+  } catch (err) {
+    console.error('[kubesword] startup failed:', err.message);
+    await mainWindow.loadURL(errorPage('KubeSword failed to start', err.message || err));
   }
 
   mainWindow.on('closed', () => { mainWindow = null; });

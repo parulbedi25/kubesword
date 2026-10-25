@@ -1,22 +1,20 @@
 # KubeSword — web mode (any browser)
-FROM node:22-alpine AS client-build
+# The server compiles to a single bundled file, so the runtime image
+# needs no node_modules at all: just node + the two build outputs.
+FROM node:22-alpine AS build
 WORKDIR /app
-COPY package.json package-lock.json* ./
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+COPY package.json package-lock.json ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
-RUN npm install --workspace=@kubesword/client --no-audit --no-fund || npm install --prefix client --no-audit --no-fund
-COPY client/ ./client/
-RUN npm run build --workspace=@kubesword/client
+RUN npm install --no-audit --no-fund
+COPY . .
+RUN npm run build
 
-FROM node:22-alpine AS server
+FROM node:22-alpine
 WORKDIR /app
-ENV NODE_ENV=production
-COPY package.json ./
-COPY server/package.json ./server/
-RUN npm install --prefix server --omit=dev --no-audit --no-fund
-COPY server/src ./server/dist-tmp
-RUN mkdir -p server/dist && cp -r server/dist-tmp/* server/dist/ && rm -rf server/dist-tmp
-COPY --from=client-build /app/client/dist ./client/dist
+ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
+COPY --from=build /app/client/dist ./client/dist
+COPY --from=build /app/server/dist ./server/dist
 EXPOSE 3000
-ENV PORT=3000 HOST=0.0.0.0
 CMD ["node", "server/dist/index.js"]

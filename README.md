@@ -26,13 +26,16 @@
 
 ## 🚀 Run it
 
-### Option A — Web (any browser)
+### Option A — Web (any browser): just two commands
 
 ```bash
 npm install
-npm run web        # builds the UI and serves it on http://localhost:3001
-# then open the URL in any browser
+npm start          # builds once if needed, starts the server, opens your browser
+# → http://localhost:3001 (set PORT=... to change, NO_BROWSER=1 to skip auto-open)
 ```
+
+That's it — no extra dependencies, no Electron needed for the browser version.
+(`npm start -- --build` forces a rebuild.)
 
 Development (hot reload UI + API):
 
@@ -52,17 +55,23 @@ docker compose up --build   # http://localhost:3000 (mounts ~/.kube read-only)
 npm install
 npm run dist       # builds for the current OS
 npm run dist:win   # KubeSword-*-win-x64.exe (NSIS installer + portable)
-npm run dist:mac   # KubeSword-*-mac-*.dmg (+ zip)
+npm run dist:mac   # KubeSword-*-mac-arm64.dmg — optimized for Apple Silicon (M1/M2/M3/M4)
+npm run dist:mac:intel  # Intel Macs (.dmg)
+npm run dist:mac:all    # both Apple Silicon + Intel
 npm run dist:linux # KubeSword-*-linux-x64.deb (+ AppImage)
 ```
 
-Installers land in `release/`. CI (`.github/workflows/build.yml`) builds all three OS targets on every push and attaches them to GitHub Releases on tags like `v1.0.0`.
+Installers land in `release/`. CI (`.github/workflows/build.yml`) builds all OS targets on every push and attaches them to GitHub Releases on tags like `v1.0.0`.
 
-Desktop dev mode (Electron + hot reload):
+Notes:
+- The backend ships as a **single bundled file** (no `node_modules` in the package), so the DMG stays lean, launches fast, and works fully offline on Apple Silicon.
+- Run the desktop shell from source with `npm run desktop` (builds first via `npm run build` if needed).
+- Desktop dev mode (Electron + hot reload): `npm run dev:electron`.
 
-```bash
-npm run dev:electron
-```
+### Troubleshooting
+
+- **Blank / stuck on "Loading"**: rebuild once with `npm run build` (or `npm start -- --build`), then hard-refresh (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>). The loading screen now reports startup failures instead of hanging silently — check the console (<kbd>F12</kbd>) for details.
+- **`npm install` failing on the Electron download** (restricted networks): the browser version doesn't need Electron at all — set `ELECTRON_SKIP_BINARY_DOWNLOAD=1` and re-run install. You only need the Electron binary for `npm run desktop` / `npm run dist*`.
 
 ## 🔌 Connecting clusters
 

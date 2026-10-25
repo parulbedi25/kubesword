@@ -8,3 +8,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>
 );
+
+// Signals the boot watchdog in index.html that the bundle mounted OK.
+(window as any).__ks_mounted = true;
