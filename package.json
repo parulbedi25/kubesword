@@ -1,0 +1,104 @@
+{
+  "name": "kubesword",
+  "version": "1.0.0",
+  "description": "KubeSword — Web-based Kubernetes cluster monitoring & management (Lens / Headlamp alternative). Runs in any browser and as a desktop app for Windows, macOS and Linux.",
+  "author": "KubeSword Contributors",
+  "license": "MIT",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:electron": "concurrently -n server,client,electron -c blue,green,magenta \"npm run dev -w server\" \"npm run dev -w client\" \"wait-on http://localhost:5173 http://localhost:3001/api/health && electron .\"",
+    "web": "npm run build:client && npm run start -w server",
+    "web:dev": "npm run dev",
+    "start": "electron .",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "npm run build -w client",
+    "build:server": "npm run build -w server",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "pack": "npm run build && electron-builder --dir",
+    "test": "npm run test -w server --if-present && npm run test -w client --if-present",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx || true"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^32.1.2",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.kubesword.app",
+    "productName": "KubeSword",
+    "copyright": "Copyright © 2026 KubeSword Contributors",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "server/dist/**/*",
+      "server/package.json",
+      "client/dist/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "KubeSword-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "KubeSword"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "artifactName": "KubeSword-${version}-mac-${arch}.${ext}",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        },
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "KubeSword-${version}-linux-${arch}.${ext}",
+      "category": "Development",
+      "maintainer": "KubeSword Contributors",
+      "description": "Web-based Kubernetes cluster monitoring & management tool"
+    }
+  }
+}

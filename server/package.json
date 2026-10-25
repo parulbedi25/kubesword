@@ -1,0 +1,22 @@
+{
+  "name": "@kubesword/server",
+  "version": "1.0.0",
+  "description": "KubeSword backend — Kubernetes API bridge (multi-cluster, metrics, logs, exec, port-forward)",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node dist/index.js",
+    "start:src": "node src/index.js",
+    "build": "node scripts/build.js",
+    "test": "node --test test/ 2>&1 | head -50"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^0.22.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "express-rate-limit": "^7.4.0",
+    "js-yaml": "^4.1.0",
+    "ws": "^8.18.0"
+  }
+}
