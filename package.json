@@ -11,17 +11,19 @@
   ],
   "main": "electron/main.js",
   "scripts": {
+    "start": "node scripts/start.js",
+    "desktop": "electron .",
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "dev:electron": "concurrently -n server,client,electron -c blue,green,magenta \"npm run dev -w server\" \"npm run dev -w client\" \"wait-on http://localhost:5173 http://localhost:3001/api/health && electron .\"",
-    "web": "npm run build:client && npm run start -w server",
-    "web:dev": "npm run dev",
-    "start": "electron .",
+    "web": "npm run build && node server/dist/index.js",
     "build": "npm run build:client && npm run build:server",
     "build:client": "npm run build -w client",
     "build:server": "npm run build -w server",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:mac": "npm run build && electron-builder --mac --arm64",
+    "dist:mac:intel": "npm run build && electron-builder --mac --x64",
+    "dist:mac:all": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux",
     "pack": "npm run build && electron-builder --dir",
     "test": "npm run test -w server --if-present && npm run test -w client --if-present",
@@ -29,14 +31,23 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "electron": "^32.1.2",
     "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
     "wait-on": "^7.2.0"
+  },
+  "optionalDependencies": {
+    "electron": "^32.1.2"
   },
   "build": {
     "appId": "com.kubesword.app",
     "productName": "KubeSword",
     "copyright": "Copyright © 2026 KubeSword Contributors",
+    "compression": "maximum",
+    "npmRebuild": false,
+    "asar": true,
+    "asarUnpack": [
+      "server/dist/**/*"
+    ],
     "directories": {
       "output": "release"
     },
@@ -74,15 +85,25 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": ["arm64", "x64"]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": ["arm64", "x64"]
         }
       ],
       "artifactName": "KubeSword-${version}-mac-${arch}.${ext}",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "11.0.0"
+    },
+    "dmg": {
+      "iconSize": 100,
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     },
     "linux": {
       "target": [

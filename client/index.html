@@ -6,9 +6,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="KubeSword — monitor & manage Kubernetes clusters from any browser or desktop app" />
     <title>KubeSword — Kubernetes Monitor</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0a0e14; }
+      #ks-boot { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #e2e8f0; }
+      #ks-boot .ring { width: 44px; height: 44px; border-radius: 50%; border: 3px solid #1a2230;
+        border-top-color: #38bdf8; animation: ks-spin 0.9s linear infinite; margin-bottom: 16px; }
+      @keyframes ks-spin { to { transform: rotate(360deg); } }
+      #ks-boot h1 { font-size: 18px; margin: 0 0 6px; }
+      #ks-boot-msg { font-size: 13px; color: #64748b; max-width: 420px; text-align: center; line-height: 1.5; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="ks-boot">
+        <div class="ring"></div>
+        <h1>⚔️ KubeSword</h1>
+        <p id="ks-boot-msg">Loading…</p>
+      </div>
+    </div>
+    <noscript>
+      <div style="color:#e2e8f0;font-family:sans-serif;text-align:center;padding:60px">KubeSword needs JavaScript enabled.</div>
+    </noscript>
+    <script>
+      // If the app bundle fails to boot (stale/missing build, blocked assets),
+      // tell the user instead of sitting on a spinner forever.
+      setTimeout(function () {
+        if (!window.__ks_mounted) {
+          var el = document.getElementById('ks-boot-msg');
+          if (el) {
+            el.style.color = '#f87171';
+            el.textContent = 'Still loading — the app bundle may have failed to start. ' +
+              'Rebuild with `npm run build` (or just `npm start`), hard-refresh (Ctrl/Cmd+Shift+R), ' +
+              'and check the console (F12) for errors.';
+          }
+        }
+      }, 12000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
