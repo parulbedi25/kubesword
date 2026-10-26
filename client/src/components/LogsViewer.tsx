@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Pause, Play, Trash2 } from 'lucide-react';
 import { useCluster } from '../context/ClusterContext';
@@ -36,7 +36,15 @@ export function LogsViewer({ namespace, pod, container }: { namespace: string; p
   }, [streamed, follow]);
 
   const text = follow ? streamed : snapshot.data || '';
-  const lines = text.split('\n').filter((l) => !filter || l.toLowerCase().includes(filter.toLowerCase()));
+  const lines = useMemo(
+    () => text.split('\n').filter((l) => !filter || l.toLowerCase().includes(filter.toLowerCase())),
+    [text, filter],
+  );
+  // Never render more than this many log divs — chatty containers can emit
+  // thousands of lines and freeze the tab. Download still gets everything.
+  const MAX_RENDER_LINES = 1500;
+  const rendered = lines.length > MAX_RENDER_LINES ? lines.slice(-MAX_RENDER_LINES) : lines;
+  const hidden = lines.length - rendered.length;
 
   const download = () => {
     const blob = new Blob([text], { type: 'text/plain' });
@@ -63,7 +71,14 @@ export function LogsViewer({ namespace, pod, container }: { namespace: string; p
         ) : lines.length === 0 ? (
           <span className="text-slate-500">No log lines.</span>
         ) : (
-          lines.map((l, i) => <LogLine key={i} line={l} />)
+          <>
+            {hidden > 0 && (
+              <div className="text-amber-300/80 italic mb-1">
+                … {hidden.toLocaleString()} older lines hidden (use Download for the full log)
+              </div>
+            )}
+            {rendered.map((l, i) => <LogLine key={i} line={l} />)}
+          </>
         )}
       </div>
     </div>

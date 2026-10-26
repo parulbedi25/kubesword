@@ -1,5 +1,6 @@
-import React, { useState, Suspense, lazy } from 'react';
-const Editor = lazy(() => import('./MonacoEditor'));
+import React, { useState, Suspense } from 'react';
+import { lazyWithRetry } from '../lib/lazyRetry';
+const Editor = lazyWithRetry(() => import('./MonacoEditor'));
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Check, Save } from 'lucide-react';
 import { useCluster } from '../context/ClusterContext';

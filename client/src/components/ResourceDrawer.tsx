@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
+import { lazyWithRetry } from '../lib/lazyRetry';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2, RotateCcw, Scaling } from 'lucide-react';
 import { useCluster } from '../context/ClusterContext';
@@ -8,7 +9,7 @@ import { Drawer, Tabs, Loading, ErrorBox, Kv, Badge, Modal } from './ui';
 import { YamlViewer } from './YamlViewer';
 import { LogsViewer } from './LogsViewer';
 // xterm is heavy — load it only when the terminal tab opens.
-const TerminalView = lazy(() => import('./TerminalView').then((m) => ({ default: m.TerminalView })));
+const TerminalView = lazyWithRetry(() => import('./TerminalView').then((m) => ({ default: m.TerminalView })));
 
 export function ResourceDrawer({
   kind, namespace, name, onClose,
@@ -115,7 +116,11 @@ export function ResourceDrawer({
       )}
 
       {tab === 'logs' && isPod && <LogsViewer namespace={namespace} pod={name} container={activeContainer} />}
-      {tab === 'terminal' && isPod && <TerminalView namespace={namespace} pod={name} container={activeContainer} />}
+      {tab === 'terminal' && isPod && (
+        <Suspense fallback={<Loading label="Loading terminal…" />}>
+          <TerminalView namespace={namespace} pod={name} container={activeContainer} />
+        </Suspense>
+      )}
 
       {tab === 'events' && (
         <div className="p-5">

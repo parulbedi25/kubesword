@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useCluster } from '../context/ClusterContext';
 import { k8s } from '../lib/api';
@@ -35,6 +35,10 @@ export function ResourceTable({
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<1 | -1>(1);
+  // Client-side pagination: rendering thousands of rows at once freezes /
+  // crashes tabs on large clusters, so only one page hits the DOM.
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
 
   const query = useQuery({
     queryKey: ['list', current, kind, namespaces ? namespace : 'all'],
@@ -67,6 +71,15 @@ export function ResourceTable({
     else setSortDir((d) => (d === 1 ? -1 : 1));
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setPage(0), [kind, current, namespace, search, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const visible = items.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const from = items.length === 0 ? 0 : safePage * pageSize + 1;
+  const to = Math.min(items.length, safePage * pageSize + pageSize);
+
   if (query.isLoading) return <Loading />;
   if (query.isError) return <ErrorBox error={query.error} onRetry={() => query.refetch()} />;
 
@@ -91,7 +104,7 @@ export function ResourceTable({
             </tr>
           </thead>
           <tbody>
-            {items.map((it, i) => (
+            {visible.map((it, i) => (
               <tr key={it.metadata?.uid || `${it.metadata?.namespace}/${it.metadata?.name}` || i} onClick={onRowClick ? () => onRowClick(it) : undefined} className={onRowClick ? 'cursor-pointer' : ''}>
                 {columns.map((c) => (
                   <td key={c.key}>{c.render(it)}</td>
@@ -101,6 +114,25 @@ export function ResourceTable({
           </tbody>
         </table>
         {items.length === 0 && <EmptyState title={`No ${kind} found`} hint={namespace !== 'all' ? 'Try switching namespace to "all".' : undefined} />}
+        {items.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 bg-base-850/60 border-t border-base-700/60 text-xs text-slate-400">
+            <span>Showing {from}–{to} of {items.length}</span>
+            <div className="flex-1" />
+            <select
+              className="ks-select !py-1 !px-2 !text-xs"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              title="Rows per page"
+            >
+              {[25, 50, 100, 250].map((n) => <option key={n} value={n}>{n} / page</option>)}
+            </select>
+            <button className="ks-btn-ghost !py-1 !px-2.5 !text-xs" disabled={safePage === 0} onClick={() => setPage(0)}>«</button>
+            <button className="ks-btn-ghost !py-1 !px-2.5 !text-xs" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>‹ Prev</button>
+            <span className="px-1 font-mono">Page {safePage + 1} / {totalPages}</span>
+            <button className="ks-btn-ghost !py-1 !px-2.5 !text-xs" disabled={safePage >= totalPages - 1} onClick={() => setPage(safePage + 1)}>Next ›</button>
+            <button className="ks-btn-ghost !py-1 !px-2.5 !text-xs" disabled={safePage >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>»</button>
+          </div>
+        )}
       </div>
     </div>
   );

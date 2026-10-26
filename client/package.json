@@ -6,7 +6,8 @@
   "description": "KubeSword web UI — React dashboard for Kubernetes",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test": "echo \"no client tests yet\""
   },
