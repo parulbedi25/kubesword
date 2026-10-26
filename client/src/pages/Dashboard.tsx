@@ -1,12 +1,13 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Server, Box, Layers, Network, AlertTriangle, RotateCcw, Cpu, MemoryStick } from 'lucide-react';
 import { useCluster } from '../context/ClusterContext';
 import { k8s } from '../lib/api';
 import { timeAgo, toneClasses, cn } from '../lib/utils';
 import { Loading, ErrorBox, StatCard, Badge } from '../components/ui';
+import { lazyWithRetry } from '../lib/lazyRetry';
 
-const DashboardCharts = lazy(() => import('../components/DashboardCharts'));
+const DashboardCharts = lazyWithRetry(() => import('../components/DashboardCharts'));
 
 export function Dashboard() {
   const { current } = useCluster();

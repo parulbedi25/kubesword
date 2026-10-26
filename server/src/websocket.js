@@ -11,11 +11,45 @@ const mock = require('./mock-data');
 
 function attachWebSockets(wss, manager) {
   wss.on('connection', (ws, req) => {
-    const url = new URL(req.url, 'http://localhost');
-    if (url.pathname === '/ws/logs') return handleLogs(ws, url, manager);
-    if (url.pathname === '/ws/exec') return handleExec(ws, url, manager);
-    ws.close(1008, 'unknown endpoint');
+    // Socket errors must never take down the process.
+    ws.on('error', () => {});
+    let url;
+    try {
+      url = new URL(req?.url || '', 'http://localhost');
+    } catch {
+      return safeClose(ws, 1008, 'bad request');
+    }
+    // Handlers are async: a rejection here would be an unhandled rejection
+    // and crash the whole server (killing the UI with it in `npm start`).
+    if (url.pathname === '/ws/logs') {
+      Promise.resolve(handleLogs(ws, url, manager)).catch((err) => failWs(ws, err));
+      return;
+    }
+    if (url.pathname === '/ws/exec') {
+      Promise.resolve(handleExec(ws, url, manager)).catch((err) => failWs(ws, err));
+      return;
+    }
+    safeClose(ws, 1008, 'unknown endpoint');
   });
+  wss.on('error', (err) => console.error('[kubesword] websocket server error:', err?.message || err));
+}
+
+function safeSend(ws, data) {
+  try {
+    if (ws.readyState === ws.OPEN) ws.send(data);
+  } catch { /* peer went away mid-write */ }
+}
+
+function safeClose(ws, code, reason) {
+  try {
+    ws.close(code, reason);
+  } catch { /* already closed */ }
+}
+
+function failWs(ws, err) {
+  console.error('[kubesword] websocket handler error:', err?.message || err);
+  safeSend(ws, `\n[error] ${err?.message || 'internal error'}\n`);
+  safeClose(ws, 1011, 'internal error');
 }
 
 async function handleLogs(ws, url, manager) {
@@ -29,8 +63,8 @@ async function handleLogs(ws, url, manager) {
   try {
     conn = manager.get(cluster);
   } catch {
-    ws.send(`\n[error] unknown cluster: ${cluster}\n`);
-    return ws.close();
+    safeSend(ws, `\n[error] unknown cluster: ${cluster}\n`);
+    return safeClose(ws);
   }
 
   if (conn.isDemo) {
@@ -39,21 +73,25 @@ async function handleLogs(ws, url, manager) {
     let i = 0;
     const timer = setInterval(() => {
       if (ws.readyState !== ws.OPEN) return clearInterval(timer);
-      if (i < lines.length) {
-        ws.send(lines[i] + '\n');
-        i++;
-      } else {
-        ws.send(`[${new Date().toISOString()}] INFO  GET /healthz 200 ${1 + Math.floor(Math.random() * 5)}ms\n`);
+      try {
+        if (i < lines.length) {
+          ws.send(lines[i] + '\n');
+          i++;
+        } else {
+          ws.send(`[${new Date().toISOString()}] INFO  GET /healthz 200 ${1 + Math.floor(Math.random() * 5)}ms\n`);
+        }
+      } catch {
+        clearInterval(timer);
       }
     }, 120);
+    timer.unref?.();
     ws.on('close', () => clearInterval(timer));
     return;
   }
 
   const stream = new PassThrough();
-  stream.on('data', (chunk) => {
-    if (ws.readyState === ws.OPEN) ws.send(chunk.toString());
-  });
+  stream.on('error', () => {});
+  stream.on('data', (chunk) => safeSend(ws, chunk.toString()));
 
   ws.on('close', () => {
     try { stream.destroy(); } catch { /* noop */ }
@@ -67,11 +105,10 @@ async function handleLogs(ws, url, manager) {
       pretty: false,
     });
   } catch (e) {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(`\n[error] ${e?.body?.message || e.message}\n`);
-      ws.close();
-    }
+    safeSend(ws, `\n[error] ${e?.body?.message || e.message}\n`);
+    safeClose(ws);
   }
+  try { stream.destroy(); } catch { /* noop */ }
 }
 
 async function handleExec(ws, url, manager) {
@@ -87,30 +124,33 @@ async function handleExec(ws, url, manager) {
   try {
     conn = manager.get(cluster);
   } catch {
-    ws.send(`\r\n[error] unknown cluster: ${cluster}\r\n`);
-    return ws.close();
+    safeSend(ws, `\r\n[error] unknown cluster: ${cluster}\r\n`);
+    return safeClose(ws);
   }
 
   if (conn.isDemo) {
-    ws.send(`\x1b[1;32m➜\x1b[0m  Connected to \x1b[1m${pod}\x1b[0m (demo shell — read-only simulation)\r\n`);
-    ws.send(`\x1b[90mType 'help' for demo commands.\x1b[0m\r\n$ `);
+    safeSend(ws, `\x1b[1;32m➜\x1b[0m  Connected to \x1b[1m${pod}\x1b[0m (demo shell — read-only simulation)\r\n`);
+    safeSend(ws, `\x1b[90mType 'help' for demo commands.\x1b[0m\r\n$ `);
     let buf = '';
     ws.on('message', (data) => {
-      const s = data.toString();
-      for (const ch of s) {
-        if (ch === '\r' || ch === '\n') {
-          ws.send('\r\n');
-          handleDemoCommand(ws, buf.trim(), { pod, namespace });
-          buf = '';
-          if (ws.readyState === ws.OPEN) ws.send('$ ');
-        } else if (ch === '\u007f') {
-          if (buf.length) { buf = buf.slice(0, -1); ws.send('\b \b'); }
-        } else if (ch === '\u0003') {
-          ws.send('^C\r\n$ '); buf = '';
-        } else {
-          buf += ch; ws.send(ch);
+      try {
+        const s = data.toString().slice(0, 4096);
+        for (const ch of s) {
+          if (ch === '\r' || ch === '\n') {
+            safeSend(ws, '\r\n');
+            handleDemoCommand(ws, buf.trim(), { pod, namespace });
+            buf = '';
+            safeSend(ws, '$ ');
+          } else if (ch === '\u007f') {
+            if (buf.length) { buf = buf.slice(0, -1); safeSend(ws, '\b \b'); }
+          } else if (ch === '\u0003') {
+            safeSend(ws, '^C\r\n$ '); buf = '';
+          } else {
+            buf += ch; safeSend(ws, ch);
+          }
+          if (buf.length > 4096) buf = buf.slice(-4096);
         }
-      }
+      } catch { /* malformed input — ignore */ }
     });
     return;
   }
@@ -118,9 +158,16 @@ async function handleExec(ws, url, manager) {
   const stdout = new PassThrough();
   const stderr = new PassThrough();
   const stdin = new PassThrough();
+  for (const s of [stdout, stderr, stdin]) s.on('error', () => {});
 
-  stdout.on('data', (d) => ws.readyState === ws.OPEN && ws.send(d));
-  stderr.on('data', (d) => ws.readyState === ws.OPEN && ws.send(d));
+  stdout.on('data', (d) => safeSend(ws, d));
+  stderr.on('data', (d) => safeSend(ws, d));
+
+  const writeStdin = (chunk) => {
+    try {
+      if (!stdin.destroyed) stdin.write(chunk);
+    } catch { /* stream gone — ignore */ }
+  };
 
   ws.on('message', (data) => {
     try {
@@ -130,11 +177,11 @@ async function handleExec(ws, url, manager) {
         return;
       }
       if (msg.type === 'input' && typeof msg.data === 'string') {
-        stdin.write(msg.data);
+        writeStdin(msg.data);
         return;
       }
     } catch { /* raw input */ }
-    stdin.write(data);
+    writeStdin(data);
   });
 
   ws.on('close', () => {
@@ -157,10 +204,8 @@ async function handleExec(ws, url, manager) {
         return;
       } catch { /* try next */ }
     }
-    if (ws.readyState === ws.OPEN) {
-      ws.send(`\r\n[error] exec failed: ${e?.body?.message || e.message}\r\n`);
-      ws.close();
-    }
+    safeSend(ws, `\r\n[error] exec failed: ${e?.body?.message || e.message}\r\n`);
+    safeClose(ws);
   }
   void cols; void rows;
 }

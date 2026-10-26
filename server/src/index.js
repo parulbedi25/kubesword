@@ -70,6 +70,24 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: undefined });
 attachWebSockets(wss, manager);
 
+// Malformed HTTP (e.g. garbage bytes on refresh storms, half-open sockets)
+// must kill the socket, never the process.
+server.on('clientError', (err, socket) => {
+  console.error('[kubesword] client error:', err?.message || err);
+  try { socket.destroy(); } catch { /* noop */ }
+});
+
+// Last-resort guards: the k8s client does network I/O on stray sockets and
+// watch streams that can reject outside any request. Crashing here would
+// take the whole UI down with it (in `npm start` / desktop mode), so log
+// loudly and stay up instead — this server is a stateless bridge.
+process.on('unhandledRejection', (reason) => {
+  console.error('[kubesword] unhandled rejection (server staying up):', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[kubesword] uncaught exception (server staying up):', err);
+});
+
 server.listen(PORT, HOST, () => {
   console.log(`[kubesword] server listening on http://${HOST}:${PORT}`);
   if (process.send) process.send({ type: 'kubesword:ready', port: PORT });

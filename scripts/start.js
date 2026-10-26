@@ -60,9 +60,10 @@ function portInUse(port) {
   });
 }
 
-async function waitFor(url, label, timeoutMs = 120000) {
+async function waitFor(url, label, timeoutMs = 120000, shouldAbort) {
   const start = Date.now();
   for (;;) {
+    if (shouldAbort && shouldAbort()) throw new Error(`${label} failed to start — check the logs above`);
     if (await httpOk(url)) return;
     if (Date.now() - start > timeoutMs) throw new Error(`${label} did not become ready at ${url}`);
     await new Promise((r) => setTimeout(r, 500));
@@ -95,46 +96,73 @@ async function main() {
     return;
   }
 
-  console.log('[kubesword] starting API server (from source, no build)…');
-  const api = spawnTagged('server', '\x1b[34m', process.execPath, ['server/src/index.js'], {
-    cwd: ROOT,
-    env: { ...process.env, PORT: String(API_PORT) },
-  });
-
-  console.log('[kubesword] starting UI in dev mode (no build)…');
-  const ui = spawnTagged('client', '\x1b[32m', 'npm', ['run', 'dev', '-w', 'client'], {
-    cwd: ROOT,
-    shell: true,
-    env: { ...process.env, API_PORT: String(API_PORT), CLIENT_PORT: String(UI_PORT) },
-  });
-
+  // Supervised children: a crash restarts that child (bounded) instead of
+  // killing its healthy sibling and taking the whole app down.
+  const children = {};
+  const restarts = { server: 0, client: 0 };
+  const MAX_RESTARTS = 3;
   let shuttingDown = false;
+  let failed = false;
+
   const shutdown = (code) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    for (const c of [api, ui]) { try { c.kill('SIGTERM'); } catch { /* noop */ } }
+    for (const c of Object.values(children)) { try { c.kill('SIGTERM'); } catch { /* noop */ } }
     setTimeout(() => process.exit(code), 800).unref();
   };
   process.on('SIGINT', () => shutdown(0));
   process.on('SIGTERM', () => shutdown(0));
 
-  for (const [child, label] of [[api, 'API server'], [ui, 'UI']]) {
-    child.on('error', (err) => {
-      console.error(`[kubesword] failed to start ${label}: ${err.message}`);
-      shutdown(1);
-    });
-    child.on('exit', (code) => {
-      if (shuttingDown) return;
-      if (code !== 0 && code !== null) {
-        console.error(`[kubesword] ${label} exited with code ${code} — stopping.`);
-        shutdown(code);
-      }
-    });
+  function onChildExit(name, label, respawn, code) {
+    if (shuttingDown) return;
+    if (code === 0 || code === null) return;
+    if (restarts[name] < MAX_RESTARTS) {
+      restarts[name] += 1;
+      console.error(`[kubesword] ${label} crashed (code ${code}) — restarting (${restarts[name]}/${MAX_RESTARTS})…`);
+      setTimeout(() => { if (!shuttingDown) respawn(); }, 2000);
+    } else {
+      console.error(`[kubesword] ${label} keeps crashing — giving up. Check the logs above.`);
+      failed = true;
+      shutdown(code);
+    }
   }
 
+  function wireChild(name, label, child, respawn) {
+    children[name] = child;
+    // A child that survives 60s earns a clean slate.
+    setTimeout(() => { restarts[name] = 0; }, 60000).unref();
+    child.on('error', (err) => {
+      console.error(`[kubesword] failed to start ${label}: ${err.message}`);
+      failed = true;
+      shutdown(1);
+    });
+    child.on('exit', (code) => onChildExit(name, label, respawn, code));
+  }
+
+  function spawnServer() {
+    console.log('[kubesword] starting API server (from source, no build)…');
+    wireChild('server', 'API server', spawnTagged('server', '\x1b[34m', process.execPath, ['server/src/index.js'], {
+      cwd: ROOT,
+      env: { ...process.env, PORT: String(API_PORT) },
+    }), spawnServer);
+  }
+
+  function spawnUi() {
+    console.log('[kubesword] starting UI in dev mode (no build)…');
+    wireChild('client', 'UI', spawnTagged('client', '\x1b[32m', 'npm', ['run', 'dev', '-w', 'client'], {
+      cwd: ROOT,
+      shell: true,
+      env: { ...process.env, API_PORT: String(API_PORT), CLIENT_PORT: String(UI_PORT) },
+    }), spawnUi);
+  }
+
+  spawnServer();
+  spawnUi();
+
+  const aborted = () => failed || shuttingDown;
   try {
-    await waitFor(`http://localhost:${API_PORT}/api/health`, 'API server');
-    await waitFor(UI_URL, 'UI');
+    await waitFor(`http://localhost:${API_PORT}/api/health`, 'API server', 120000, aborted);
+    await waitFor(UI_URL, 'UI', 120000, aborted);
   } catch (err) {
     console.error(`[kubesword] ${err.message} — check the logs above.`);
     shutdown(1);
