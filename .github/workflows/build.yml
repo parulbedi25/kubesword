@@ -23,17 +23,21 @@ jobs:
   desktop:
     needs: web-check
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             args: --win
-            pattern: 'release/*.exe'
+            artifact: kubesword-windows
           - os: macos-latest
-            args: --mac
-            pattern: 'release/*.dmg'
+            args: --mac --arm64
+            artifact: kubesword-macos-silicon
+          - os: macos-latest
+            args: --mac --x64
+            artifact: kubesword-macos-intel
           - os: ubuntu-latest
             args: --linux
-            pattern: 'release/*.deb'
+            artifact: kubesword-linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +50,7 @@ jobs:
       - run: npx electron-builder ${{ matrix.args }} --publish never
       - uses: actions/upload-artifact@v4
         with:
-          name: kubesword-${{ runner.os }}
+          name: ${{ matrix.artifact }}
           path: |
             release/*
             !release/*.blockmap

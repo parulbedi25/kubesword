@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  KubeSword macOS entitlements (applied at codesign time by electron-builder).
+
+  allow-jit + allow-unsigned-executable-memory are REQUIRED for Electron's V8
+  JavaScript engine to run under the hardened runtime on Apple Silicon —
+  without them the app is killed at launch on M1/M2/M3/M4 Macs.
+  network.client/server cover the bundled local API server + localhost UI.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+  </dict>
+</plist>

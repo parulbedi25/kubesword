@@ -8,6 +8,12 @@
 
 const { app, BrowserWindow, Menu, Tray, shell, nativeImage } = require('electron');
 const path = require('path');
+const { setupPortablePaths, serverDataDir } = require('./portable');
+
+// Portable mode (Windows standalone .exe): keep all data next to the exe.
+// Must run before app.ready / any window creation.
+const portableDataDir = setupPortablePaths(app);
+if (portableDataDir) console.log(`[kubesword] portable mode — data dir: ${portableDataDir}`);
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
@@ -66,8 +72,15 @@ async function startServer() {
     throw new Error(`local server bundle not found.\nTried:\n${serverEntryCandidates().join('\n')}\n\nRun "npm run build" and try again.`);
   }
   console.log(`[kubesword] starting server ${entry} on port ${serverPort}`);
+  const kubeswordData = serverDataDir(portableDataDir);
   serverChild = spawn(process.execPath, [entry], {
-    env: { ...process.env, PORT: String(serverPort), HOST: '127.0.0.1', ELECTRON_RUN_AS_NODE: '1' },
+    env: {
+      ...process.env,
+      PORT: String(serverPort),
+      HOST: '127.0.0.1',
+      ELECTRON_RUN_AS_NODE: '1',
+      ...(kubeswordData ? { KUBESWORD_DATA: kubeswordData } : {}),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   serverChild.stdout.on('data', (d) => console.log('[server]', d.toString().trim()));
