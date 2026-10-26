@@ -1,37 +1,90 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useCluster } from '../context/ClusterContext';
+import { k8s } from '../lib/api';
 import { timeAgo, cn } from '../lib/utils';
-import { ResourceTable } from '../components/ResourceTable';
-import { Badge } from '../components/ui';
+import { Loading, ErrorBox, SearchInput, Badge } from '../components/ui';
+import { NamespaceFilter } from '../components/NamespaceFilter';
+import { ResourceTable, Column } from '../components/ResourceTable';
 
 export function Events() {
-  const [onlyWarnings, setOnlyWarnings] = useState(false);
+  const { current, namespace } = useCluster();
+  const [search, setSearch] = useState('');
+  const [warningsOnly, setWarningsOnly] = useState(false);
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['events', current, namespace],
+    queryFn: () => k8s.list(current, 'events', namespace),
+    refetchInterval: 10000,
+  });
+
+  if (isLoading) return <Loading label="Loading events…" />;
+  if (error) return <ErrorBox error={error} onRetry={() => refetch()} />;
+  let rows = Array.isArray(data?.items) ? data.items : [];
+  if (warningsOnly) rows = rows.filter((e: any) => e.type === 'Warning');
+  const showNs = namespace === 'all';
+
+  const columns: Column<any>[] = [
+    {
+      key: 'type',
+      header: 'Type',
+      render: (e) => <Badge tone={e.type === 'Warning' ? 'yellow' : 'blue'}>{e.type || 'Normal'}</Badge>,
+    },
+    {
+      key: 'reason',
+      header: 'Reason',
+      render: (e) => <span className="font-mono text-[12px] text-slate-300">{e.reason || '-'}</span>,
+      sortValue: (e) => e.reason || '',
+    },
+    {
+      key: 'object',
+      header: 'Object',
+      render: (e) => (
+        <span>
+          <span className="font-mono text-[12px] text-slate-200 break-all">
+            {e.involvedObject ? `${e.involvedObject.kind}/${e.involvedObject.name}` : '-'}
+          </span>
+          {showNs && e.involvedObject?.namespace && (
+            <span className="block font-mono text-[11px] text-slate-500">{e.involvedObject.namespace}</span>
+          )}
+        </span>
+      ),
+      sortValue: (e) => e.involvedObject?.name || '',
+    },
+    {
+      key: 'message',
+      header: 'Message',
+      render: (e) => <span className="text-slate-300 text-[13px]">{e.message || '-'}</span>,
+    },
+    {
+      key: 'count',
+      header: 'Count',
+      render: (e) => <span className="font-mono text-slate-300">{e.count || 1}</span>,
+      sortValue: (e) => e.count || 1,
+    },
+    {
+      key: 'last',
+      header: 'Last seen',
+      render: (e) => <span className="text-slate-400">{timeAgo(e.lastTimestamp || e.eventTime)} ago</span>,
+      sortValue: (e) => e.lastTimestamp || e.eventTime || '',
+    },
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl font-bold text-slate-100">Events</h1>
-        <button
-          onClick={() => setOnlyWarnings(!onlyWarnings)}
-          className={cn('text-xs px-3 py-1.5 rounded-full border transition-colors', onlyWarnings ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-base-800 border-base-600 text-slate-400 hover:text-slate-200')}
-        >
-          Warnings only
-        </button>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-xl font-bold text-slate-100">Events <span className="text-sm font-normal text-slate-500">({rows.length})</span></h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setWarningsOnly(!warningsOnly)}
+            className={cn('ks-btn-ghost !py-2', warningsOnly && '!text-amber-300 !border-amber-500/40')}
+          >
+            Warnings only
+          </button>
+          <NamespaceFilter />
+          <SearchInput value={search} onChange={setSearch} placeholder="Search events…" />
+        </div>
       </div>
-      <ResourceTable
-        kind="events"
-        refreshInterval={5000}
-        filterFn={onlyWarnings ? (e: any) => e.type === 'Warning' : undefined}
-        searchKeys={['reason', 'message', 'involvedObject.name', 'metadata.namespace']}
-        columns={[
-          { key: 'type', header: 'Type', render: (e) => <Badge tone={e.type === 'Warning' ? 'yellow' : 'blue'}>{e.type}</Badge> },
-          { key: 'reason', header: 'Reason', render: (e) => <span className="font-medium text-[13px] text-slate-200">{e.reason}</span> },
-          { key: 'object', header: 'Object', render: (e) => <span className="font-mono text-[12px] text-slate-400">{e.involvedObject?.kind}/{e.involvedObject?.name}</span> },
-          { key: 'ns', header: 'Namespace', render: (e) => <span className="text-slate-400">{e.metadata?.namespace || '-'}</span> },
-          { key: 'msg', header: 'Message', render: (e) => <span className="text-[13px] text-slate-300 block max-w-[480px] truncate" title={e.message}>{e.message}</span> },
-          { key: 'count', header: 'Count', render: (e) => <span className="font-mono text-slate-400">{e.count || 1}</span> },
-          { key: 'age', header: 'Last seen', render: (e) => <span className="text-slate-400">{timeAgo(e.lastTimestamp || e.eventTime)} ago</span> },
-        ]}
-      />
+      <ResourceTable columns={columns} rows={rows} keyOf={(e) => e.metadata?.uid || `${e.involvedObject?.kind}/${e.involvedObject?.namespace}/${e.involvedObject?.name}/${e.reason}/${e.lastTimestamp}`} search={search} emptyTitle="No events found" />
     </div>
   );
 }

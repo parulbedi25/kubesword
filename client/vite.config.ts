@@ -30,14 +30,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    // Single bundle on purpose (no manualChunks): this is a localhost-first
+    // tool, so one ~1 MB file loads instantly — and a single file means
+    // chunk-load failures are impossible. Monaco still splits into its own
+    // lazy chunk automatically via the dynamic import in YamlViewer.
     chunkSizeWarningLimit: 1500,
-    rollupOptions: {
-      output: {
-        // Stable vendor chunk: cached across deploys, parsed in parallel.
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-        },
-      },
-    },
   },
 });

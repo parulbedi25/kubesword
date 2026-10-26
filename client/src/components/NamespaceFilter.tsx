@@ -5,16 +5,19 @@ import { k8s } from '../lib/api';
 export function NamespaceFilter() {
   const { current, namespace, setNamespace } = useCluster();
   const { data } = useQuery({
-    queryKey: ['list', current, 'namespaces', 'all'],
-    queryFn: () => k8s.list(current, 'namespaces', 'all'),
-    refetchInterval: 30000,
+    queryKey: ['namespaces', current],
+    queryFn: () => k8s.list(current, 'namespaces'),
   });
-  const nss = (data?.items || []).map((n: any) => n.metadata?.name).filter(Boolean);
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const names = items.map((n: any) => n.metadata?.name).filter(Boolean).sort();
+
   return (
-    <select className="ks-select" value={namespace} onChange={(e) => setNamespace(e.target.value)}>
+    <select className="ks-input !w-52" value={namespace} onChange={(e) => setNamespace(e.target.value)}>
       <option value="all">All namespaces</option>
-      {nss.map((n: string) => (
-        <option key={n} value={n}>{n}</option>
+      {names.map((n: string) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
       ))}
     </select>
   );

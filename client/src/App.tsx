@@ -1,27 +1,26 @@
-import React, { Suspense, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ClusterProvider } from './context/ClusterContext';
 import { Layout } from './components/Layout';
-import { Loading } from './components/ui';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { lazyWithRetry } from './lib/lazyRetry';
+import { Dashboard } from './pages/Dashboard';
+import { Nodes } from './pages/Nodes';
+import { Pods } from './pages/Pods';
+import { Workloads } from './pages/Workloads';
+import { Network } from './pages/Network';
+import { Config } from './pages/Config';
+import { Storage } from './pages/Storage';
+import { Events } from './pages/Events';
+import { Namespaces } from './pages/Namespaces';
+import { Rbac } from './pages/Rbac';
+import { PortForwards } from './pages/PortForwards';
+import { Settings } from './pages/Settings';
 
-// Route-level code splitting: each page (and its heavy deps like recharts /
-// xterm / monaco) loads on demand instead of bloating the initial bundle.
-// lazyWithRetry survives transient chunk-load failures without blanking.
-const Dashboard = lazyWithRetry(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
-const Nodes = lazyWithRetry(() => import('./pages/Nodes').then((m) => ({ default: m.Nodes })));
-const Pods = lazyWithRetry(() => import('./pages/Pods').then((m) => ({ default: m.Pods })));
-const Workloads = lazyWithRetry(() => import('./pages/Workloads').then((m) => ({ default: m.Workloads })));
-const Network = lazyWithRetry(() => import('./pages/Network').then((m) => ({ default: m.Network })));
-const Config = lazyWithRetry(() => import('./pages/Config').then((m) => ({ default: m.Config })));
-const Storage = lazyWithRetry(() => import('./pages/Storage').then((m) => ({ default: m.Storage })));
-const Events = lazyWithRetry(() => import('./pages/Events').then((m) => ({ default: m.Events })));
-const Namespaces = lazyWithRetry(() => import('./pages/Namespaces').then((m) => ({ default: m.Namespaces })));
-const Rbac = lazyWithRetry(() => import('./pages/Rbac').then((m) => ({ default: m.Rbac })));
-const PortForwards = lazyWithRetry(() => import('./pages/PortForwards').then((m) => ({ default: m.PortForwards })));
-const Settings = lazyWithRetry(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+// NOTE: deliberately a single bundle (no route code-splitting). This is a
+// localhost-first tool, so ~1 MB of JS loads instantly — and one file means
+// chunk-load failures are impossible. Only the huge Monaco editor (~4 MB,
+// used solely for YAML) loads on demand, with retries.
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -45,23 +44,21 @@ export default function App() {
         <BrowserRouter>
           <Layout>
             <ErrorBoundary title="This page crashed">
-              <Suspense fallback={<Loading label="Loading page…" />}>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/nodes" element={<Nodes />} />
-                  <Route path="/namespaces" element={<Namespaces />} />
-                  <Route path="/events" element={<Events />} />
-                  <Route path="/pods" element={<Pods />} />
-                  <Route path="/workloads" element={<Workloads />} />
-                  <Route path="/network" element={<Network />} />
-                  <Route path="/port-forwards" element={<PortForwards />} />
-                  <Route path="/config" element={<Config />} />
-                  <Route path="/storage" element={<Storage />} />
-                  <Route path="/rbac" element={<Rbac />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Suspense>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/nodes" element={<Nodes />} />
+                <Route path="/namespaces" element={<Namespaces />} />
+                <Route path="/events" element={<Events />} />
+                <Route path="/pods" element={<Pods />} />
+                <Route path="/workloads" element={<Workloads />} />
+                <Route path="/network" element={<Network />} />
+                <Route path="/port-forwards" element={<PortForwards />} />
+                <Route path="/config" element={<Config />} />
+                <Route path="/storage" element={<Storage />} />
+                <Route path="/rbac" element={<Rbac />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
             </ErrorBoundary>
           </Layout>
         </BrowserRouter>

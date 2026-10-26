@@ -1,96 +1,133 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Download, Pause, Play, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pause, Play, ArrowDown, Search, Download } from 'lucide-react';
 import { useCluster } from '../context/ClusterContext';
-import { k8s } from '../lib/api';
-import { wsBase } from '../lib/utils';
+import { wsBase, cn } from '../lib/utils';
 
-export function LogsViewer({ namespace, pod, container }: { namespace: string; pod: string; container?: string }) {
+interface Props {
+  namespace: string;
+  pod: string;
+  container?: string;
+  height?: number;
+}
+
+const MAX_LINES = 1500; // cap rendered lines so noisy pods can't freeze the UI
+
+export function LogsViewer({ namespace, pod, container, height = 480 }: Props) {
   const { current } = useCluster();
+  const [text, setText] = useState('');
+  const [paused, setPaused] = useState(false);
   const [follow, setFollow] = useState(true);
-  const [streamed, setStreamed] = useState('');
   const [filter, setFilter] = useState('');
+  const [status, setStatus] = useState('connecting…');
   const boxRef = useRef<HTMLDivElement>(null);
-
-  const snapshot = useQuery({
-    queryKey: ['logs', current, namespace, pod, container],
-    queryFn: () => k8s.podLogs(current, namespace, pod, container, 500),
-    refetchInterval: false,
-  });
+  const pausedRef = useRef(false);
+  pausedRef.current = paused;
 
   useEffect(() => {
-    setStreamed('');
+    setText('');
+    setStatus('connecting…');
+    const q = new URLSearchParams({ cluster: current, namespace, pod, tailLines: '500' });
+    if (container) q.set('container', container);
+    let ws: WebSocket | null = null;
+    let dead = false;
+
+    try {
+      ws = new WebSocket(`${wsBase()}/ws/logs?${q.toString()}`);
+    } catch (e) {
+      setStatus(`failed: ${e instanceof Error ? e.message : e}`);
+      return;
+    }
+
+    const append = (chunk: string) => {
+      if (pausedRef.current) return;
+      setText((prev) => {
+        const next = prev + chunk;
+        // Trim from the front, keeping whole lines.
+        const lines = next.split('\n');
+        if (lines.length > MAX_LINES) return lines.slice(lines.length - MAX_LINES).join('\n');
+        return next;
+      });
+    };
+
+    ws.onopen = () => !dead && setStatus('streaming');
+    ws.onmessage = (ev) => {
+      if (dead || typeof ev.data !== 'string') return;
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'stdout' || msg.type === 'stderr') append(msg.data || '');
+        else if (msg.type === 'error') setStatus(`error: ${msg.data || 'unknown'}`);
+        else if (msg.type === 'exit') setStatus('stream ended');
+      } catch {
+        append(ev.data); // raw text fallback
+      }
+    };
+    ws.onerror = () => !dead && setStatus('connection failed');
+    ws.onclose = () => !dead && setStatus((s) => (s === 'streaming' ? 'closed' : s));
+
+    return () => {
+      dead = true;
+      try {
+        ws?.close();
+      } catch {
+        /* ignore */
+      }
+    };
   }, [current, namespace, pod, container]);
 
   useEffect(() => {
-    if (!follow) return;
-    const url = `${wsBase()}/ws/logs?cluster=${encodeURIComponent(current)}&namespace=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(pod)}${container ? `&container=${encodeURIComponent(container)}` : ''}&tailLines=200`;
-    const ws = new WebSocket(url);
-    ws.onmessage = (ev) => setStreamed((s) => (s + ev.data).slice(-200000));
-    return () => ws.close();
-  }, [follow, current, namespace, pod, container]);
+    if (follow && boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
+  }, [text, follow]);
 
-  useEffect(() => {
-    const el = boxRef.current;
-    if (el && follow) el.scrollTop = el.scrollHeight;
-  }, [streamed, follow]);
-
-  const text = follow ? streamed : snapshot.data || '';
-  const lines = useMemo(
-    () => text.split('\n').filter((l) => !filter || l.toLowerCase().includes(filter.toLowerCase())),
-    [text, filter],
-  );
-  // Never render more than this many log divs — chatty containers can emit
-  // thousands of lines and freeze the tab. Download still gets everything.
-  const MAX_RENDER_LINES = 1500;
-  const rendered = lines.length > MAX_RENDER_LINES ? lines.slice(-MAX_RENDER_LINES) : lines;
-  const hidden = lines.length - rendered.length;
+  const lines = useMemo(() => {
+    const all = text.split('\n');
+    const q = filter.trim().toLowerCase();
+    const shown = q ? all.filter((l) => l.toLowerCase().includes(q)) : all;
+    return shown.slice(-MAX_LINES).join('\n');
+  }, [text, filter]);
 
   const download = () => {
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${pod}${container ? '-' + container : ''}.log`;
+    a.download = `${pod}${container ? `-${container}` : ''}.log`;
     a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-base-700/60">
-        <input className="ks-input !py-1.5 !text-xs" placeholder="Filter logs…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-        <button className="ks-btn-ghost !px-2.5 !py-1.5 !text-xs" onClick={() => setFollow(!follow)} title={follow ? 'Pause stream' : 'Resume stream'}>
-          {follow ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-          {follow ? 'Live' : 'Paused'}
+    <div>
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <button onClick={() => setPaused(!paused)} className="ks-btn-ghost !py-1.5 !text-xs">
+          {paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+          {paused ? 'Resume' : 'Pause'}
         </button>
-        <button className="ks-btn-ghost !px-2.5 !py-1.5" onClick={() => setStreamed('')} title="Clear"><Trash2 className="w-3.5 h-3.5" /></button>
-        <button className="ks-btn-ghost !px-2.5 !py-1.5" onClick={download} title="Download"><Download className="w-3.5 h-3.5" /></button>
+        <button
+          onClick={() => setFollow(!follow)}
+          className={cn('ks-btn-ghost !py-1.5 !text-xs', follow && '!text-accent-300 !border-accent-500/40')}
+        >
+          <ArrowDown className="w-3.5 h-3.5" /> Follow
+        </button>
+        <div className="relative flex-1 min-w-[140px]">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            className="ks-input !py-1.5 !text-xs pl-8"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter lines…"
+          />
+        </div>
+        <button onClick={download} className="ks-btn-ghost !py-1.5 !text-xs" title="Download full log">
+          <Download className="w-3.5 h-3.5" />
+        </button>
+        <span className="text-xs text-slate-500">{status}</span>
       </div>
-      <div ref={boxRef} className="flex-1 overflow-auto bg-black/60 p-3 font-mono text-[12px] leading-relaxed min-h-[300px] max-h-[520px]">
-        {snapshot.isLoading && !streamed ? (
-          <span className="text-slate-500">Loading logs…</span>
-        ) : lines.length === 0 ? (
-          <span className="text-slate-500">No log lines.</span>
-        ) : (
-          <>
-            {hidden > 0 && (
-              <div className="text-amber-300/80 italic mb-1">
-                … {hidden.toLocaleString()} older lines hidden (use Download for the full log)
-              </div>
-            )}
-            {rendered.map((l, i) => <LogLine key={i} line={l} />)}
-          </>
-        )}
+      <div
+        ref={boxRef}
+        style={{ height }}
+        className="rounded-lg border border-base-700/60 bg-[#0a0f1e] p-3 overflow-auto font-mono text-[12px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all"
+      >
+        {lines || <span className="text-slate-600">Waiting for log output…</span>}
       </div>
     </div>
   );
-}
-
-function LogLine({ line }: { line: string }) {
-  let cls = 'text-slate-300';
-  if (/\b(ERROR|Error|error|FATAL|panic|CrashLoop)\b/.test(line)) cls = 'text-red-300';
-  else if (/\b(WARN|Warn|warning)\b/.test(line)) cls = 'text-amber-300';
-  else if (/\b(INFO|info)\b/.test(line)) cls = 'text-slate-300';
-  else if (/\b(DEBUG|debug)\b/.test(line)) cls = 'text-slate-500';
-  else if (/^\[/.test(line)) cls = 'text-slate-300';
-  return <div className={`${cls} whitespace-pre-wrap break-all`}>{line || ' '}</div>;
 }
