@@ -126,6 +126,39 @@ async function main() {
     const logs = await fetch(base + '/api/demo/pods/default/x/logs');
     check('GET pod logs (demo)', logs.status === 200 && (await logs.text()).length > 0);
 
+    // ---- single-door: / must always lead to the UI, never a JSON blob ----
+    const rootRes = await fetch(base + '/', { redirect: 'manual' });
+    const rootBody = await rootRes.text();
+    const rootCt = rootRes.headers.get('content-type') || '';
+    check(
+      'GET / serves a UI entry page (never the API JSON blob)',
+      rootRes.status === 200 && rootCt.includes('text/html') && !rootBody.includes('"kubesword-server"'),
+      `status=${rootRes.status} ct=${rootCt} body=${rootBody.slice(0, 100)}`,
+    );
+
+    // Dev mode (`npm start`): / redirects straight to the UI, even when a
+    // (possibly stale) client/dist exists.
+    const prevDev = process.env.KUBESWORD_DEV;
+    const prevUi = process.env.KUBESWORD_UI_URL;
+    process.env.KUBESWORD_DEV = '1';
+    process.env.KUBESWORD_UI_URL = 'http://localhost:5999';
+    const devServer = http.createServer(createApp(manager));
+    await new Promise((resolve) => devServer.listen(0, '127.0.0.1', resolve));
+    try {
+      const r = await fetch(`http://127.0.0.1:${devServer.address().port}/`, { redirect: 'manual' });
+      check(
+        'dev GET / redirects (302) to the UI',
+        r.status === 302 && r.headers.get('location') === 'http://localhost:5999',
+        `status=${r.status} location=${r.headers.get('location')}`,
+      );
+    } finally {
+      await new Promise((resolve) => devServer.close(resolve));
+      if (prevDev === undefined) delete process.env.KUBESWORD_DEV;
+      else process.env.KUBESWORD_DEV = prevDev;
+      if (prevUi === undefined) delete process.env.KUBESWORD_UI_URL;
+      else process.env.KUBESWORD_UI_URL = prevUi;
+    }
+
     // ---- error paths ----
     const badKind = await jget('/api/demo/nope');
     check('bad kind -> 400 + JSON error', badKind.status === 400 && typeof badKind.body?.error === 'string');

@@ -44,8 +44,19 @@ function createApp(manager) {
   app.use('/api', createApiRouter(manager));
   app.use('/api', createPortForwardRouter(manager));
 
+  // Single-door behavior: opening the server address must always land on the
+  // UI, never on a bare API response.
+  //   - dev (`npm start`, KUBESWORD_DEV=1): redirect / to the Vite UI, even
+  //     if a stale client/dist exists — Vite is the source of truth in dev.
+  //   - prod/web/desktop (dist present): serve the built UI as today.
+  //   - bare server (no dist, not dev): friendly page that auto-continues
+  //     to the UI address instead of dumping JSON.
+  const uiUrl = devUiUrl();
   const staticDir = findWebUi();
-  if (staticDir) {
+  if (process.env.KUBESWORD_DEV) {
+    console.log(`[kubesword] dev mode — / redirects to the UI at ${uiUrl}`);
+    app.get('/', (req, res) => res.redirect(302, uiUrl));
+  } else if (staticDir) {
     console.log(`[kubesword] serving web UI from ${staticDir}`);
     app.use(express.static(staticDir));
     // SPA fallback — everything that isn't API/WS serves index.html.
@@ -54,9 +65,7 @@ function createApp(manager) {
       res.sendFile(path.join(staticDir, 'index.html'));
     });
   } else {
-    app.get('/', (req, res) =>
-      res.json({ name: 'kubesword-server', api: '/api/health', ui: 'run the client dev server (vite) or build the client' }),
-    );
+    app.get('/', (req, res) => res.type('html').send(noUiPage(uiUrl)));
   }
 
   // Central error handler: k8s client errors carry .body.message + statusCode.
@@ -91,6 +100,50 @@ function findWebUi() {
       return false;
     }
   });
+}
+
+// Where the dev UI lives. start.js passes KUBESWORD_UI_URL explicitly so
+// custom ports keep working; otherwise fall back to CLIENT_PORT / 5173.
+function devUiUrl() {
+  if (process.env.KUBESWORD_UI_URL) return process.env.KUBESWORD_UI_URL;
+  const port = Number(process.env.CLIENT_PORT || 5173);
+  return `http://localhost:${Number.isInteger(port) ? port : 5173}`;
+}
+
+// Shown only when the server runs bare (no built UI, not via `npm start`).
+// Auto-continues to the UI address so users still land on the app instead
+// of staring at a JSON blob.
+function noUiPage(uiUrl) {
+  const safe = String(uiUrl).replace(/"/g, '&quot;');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="refresh" content="1;url=${safe}" />
+<title>KubeSword</title>
+<style>
+html, body { margin: 0; height: 100%; background: #0a0e14; }
+body { display: flex; align-items: center; justify-content: center;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #e2e8f0; }
+.card { text-align: center; max-width: 440px; padding: 32px; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+p { font-size: 14px; color: #94a3b8; line-height: 1.6; }
+.btn { display: inline-block; margin-top: 8px; padding: 10px 24px; border-radius: 8px;
+  background: #0284c7; color: #fff !important; text-decoration: none; font-weight: 600; }
+.hint { font-size: 12px; color: #64748b; margin-top: 20px; }
+code { font-family: ui-monospace, Menlo, Consolas, monospace; color: #7dd3fc; }
+</style>
+</head>
+<body>
+<div class="card">
+<h1>&#9876; KubeSword</h1>
+<p>The server is running. Taking you to the app&hellip;</p>
+<p><a class="btn" href="${safe}">Open KubeSword</a></p>
+<p class="hint">If the app doesn&rsquo;t open, start the UI with <code>npm start</code><br />or build it once with <code>npm run build</code>.</p>
+</div>
+</body>
+</html>`;
 }
 
 function main() {

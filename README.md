@@ -40,7 +40,7 @@ npm start          # runs the project straight from source (no build), opens you
 # (set PORT=... / CLIENT_PORT=... to change ports, NO_BROWSER=1 to skip auto-open)
 ```
 
-That's it — `npm start` runs the API server from source plus the UI in dev mode with hot reload. No build step, no `dist`, no Electron needed.
+That's it — `npm start` runs the API server from source plus the UI in dev mode with hot reload. No build step, no `dist`, no Electron needed. Opening either address loads the app (the API address redirects to the UI automatically).
 
 Need the optimized production build instead (single server bundle + compiled UI)?
 
