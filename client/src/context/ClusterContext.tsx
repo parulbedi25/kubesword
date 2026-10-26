@@ -21,18 +21,22 @@ export function ClusterProvider({ children }: { children: React.ReactNode }) {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['clusters'],
     queryFn: k8s.clusters,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
+    retry: 2,
   });
 
-  const current = data?.current || 'demo';
-  const clusters = data?.clusters || [];
+  const clusters = Array.isArray(data?.clusters) ? data.clusters : [];
+  const current = data?.current || clusters[0]?.name || 'demo';
   const isDemo = clusters.find((c) => c.name === current)?.isDemo ?? true;
 
-  const switchCluster = useCallback(async (name: string) => {
-    await k8s.switchCluster(name);
-    await qc.invalidateQueries();
-    await refetch();
-  }, [qc, refetch]);
+  const switchCluster = useCallback(
+    async (name: string) => {
+      await k8s.switchCluster(name);
+      await qc.invalidateQueries();
+      await refetch();
+    },
+    [qc, refetch],
+  );
 
   const refresh = useCallback(() => {
     qc.invalidateQueries();
@@ -51,7 +55,9 @@ export function ClusterProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   return (
-    <Ctx.Provider value={{ clusters, current, isDemo, namespace, setNamespace, switchCluster, refresh, loading: isLoading }}>
+    <Ctx.Provider
+      value={{ clusters, current, isDemo, namespace, setNamespace, switchCluster, refresh, loading: isLoading }}
+    >
       {children}
     </Ctx.Provider>
   );

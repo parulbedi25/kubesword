@@ -205,6 +205,35 @@ const CLUSTER_ROLES = [
   { metadata: meta('view', undefined, 20000), rules: [{ apiGroups: ['*'], resources: ['*'], verbs: ['get', 'list', 'watch'] }] },
 ];
 
+const REPLICASETS = [
+  { metadata: meta('checkout-api-7d9f8c6b4d', 'production', 320), spec: { replicas: 3 }, status: { replicas: 3, readyReplicas: 3, availableReplicas: 3 } },
+  { metadata: meta('payments-api-6c8d9e0f1a', 'production', 90), spec: { replicas: 2 }, status: { replicas: 2, readyReplicas: 2, availableReplicas: 2 } },
+  { metadata: meta('frontend-9a8b7c6d5e', 'staging', 55), spec: { replicas: 2 }, status: { replicas: 2, readyReplicas: 2, availableReplicas: 2 } },
+];
+
+const ROLES = [
+  { metadata: meta('deployer', 'production', 4000), rules: [{ apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list', 'update', 'patch'] }] },
+  { metadata: meta('pod-reader', 'staging', 3000), rules: [{ apiGroups: [''], resources: ['pods', 'pods/log'], verbs: ['get', 'list'] }] },
+];
+
+const ROLEBINDINGS = [
+  { metadata: meta('deployer-binding', 'production', 4000), roleRef: { kind: 'Role', name: 'deployer' }, subjects: [{ kind: 'ServiceAccount', name: 'deployer' }] },
+];
+
+const CLUSTERROLEBINDINGS = [
+  { metadata: meta('view-all', undefined, 5000), roleRef: { kind: 'ClusterRole', name: 'view' }, subjects: [{ kind: 'Group', name: 'developers' }] },
+];
+
+const ENDPOINTS = [
+  { metadata: meta('checkout-api', 'production', 320), subsets: [{ addresses: [{ ip: '10.244.1.23' }, { ip: '10.244.2.45' }], ports: [{ port: 8080 }] }] },
+  { metadata: meta('kubernetes', 'default', 20000), subsets: [{ addresses: [{ ip: '10.0.0.10' }], ports: [{ port: 6443 }] }] },
+];
+
+const NETWORKPOLICIES = [
+  { metadata: meta('default-deny-ingress', 'production', 3000), spec: { podSelector: {}, policyTypes: ['Ingress'] } },
+  { metadata: meta('allow-frontend-to-api', 'production', 2900), spec: { podSelector: { matchLabels: { app: 'checkout' } }, policyTypes: ['Ingress'] } },
+];
+
 function metricsFor(nodes, pods) {
   return {
     nodes: nodes.map((n, i) => ({
@@ -223,34 +252,55 @@ function metricsFor(nodes, pods) {
   };
 }
 
+// Overview shape consumed by the dashboard: chart-ready arrays plus counts.
 function overview() {
-  const running = PODS.filter((p) => p.status.phase === 'Running').length;
+  return buildOverview({
+    nodes: NODES.length,
+    namespaces: NAMESPACES.length,
+    pods: PODS,
+    deployments: DEPLOYMENTS.length,
+    statefulsets: STATEFULSETS.length,
+    daemonsets: DAEMONSETS.length,
+    jobs: JOBS.length,
+    cronjobs: CRONJOBS.length,
+    version: 'v1.30.2',
+    events: EVENTS,
+  });
+}
+
+// Shared by demo mode and live clusters so both return identical shapes.
+function buildOverview({ nodes, namespaces, pods, deployments, statefulsets, daemonsets, jobs, cronjobs, version, events }) {
+  const byPhase = {};
+  const byNs = {};
+  const byPhaseAndNs = [];
+  for (const p of pods) {
+    const phase = p.status?.phase || 'Unknown';
+    const ns = p.metadata?.namespace || 'default';
+    byPhase[phase] = (byPhase[phase] || 0) + 1;
+    byNs[ns] = (byNs[ns] || 0) + 1;
+    byPhaseAndNs.push({ namespace: ns, phase, value: 1 });
+  }
+  const sortedEvents = [...events].sort(
+    (a, b) => new Date(b.lastTimestamp || b.eventTime || 0) - new Date(a.lastTimestamp || a.eventTime || 0),
+  );
   return {
     counts: {
-      nodes: NODES.length,
-      namespaces: NAMESPACES.length,
-      pods: PODS.length,
-      deployments: DEPLOYMENTS.length,
-      statefulsets: STATEFULSETS.length,
-      daemonsets: DAEMONSETS.length,
-      jobs: JOBS.length,
-      cronjobs: CRONJOBS.length,
-      services: SERVICES.length,
-      ingresses: INGRESSES.length,
-      configmaps: CONFIGMAPS.length,
-      secrets: SECRETS.length,
-      pvcs: PVCS.length,
-      pvs: PVS.length,
-      hpas: HPAS.length,
+      nodes,
+      namespaces,
+      pods: pods.length,
+      deployments,
+      statefulsets,
+      daemonsets,
+      jobs,
+      cronjobs,
     },
-    podsByPhase: {
-      Running: running,
-      Pending: PODS.filter((p) => p.status.phase === 'Pending').length,
-      Succeeded: PODS.filter((p) => p.status.phase === 'Succeeded').length,
-      Failed: PODS.filter((p) => p.status.phase === 'Failed').length,
-    },
-    warnings: EVENTS.filter((e) => e.type === 'Warning').length,
-    restarts: PODS.reduce((a, p) => a + (p.status.containerStatuses || []).reduce((x, c) => x + (c.restartCount || 0), 0), 0),
+    version,
+    podPhases: Object.entries(byPhase).map(([name, value]) => ({ name, value })),
+    podsByNamespace: Object.entries(byNs)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value),
+    podsByPhaseAndNs: byPhaseAndNs,
+    recentEvents: sortedEvents.slice(0, 20),
   };
 }
 
@@ -288,7 +338,14 @@ module.exports = {
   EVENTS,
   SERVICE_ACCOUNTS,
   CLUSTER_ROLES,
+  REPLICASETS,
+  ROLES,
+  ROLEBINDINGS,
+  CLUSTERROLEBINDINGS,
+  ENDPOINTS,
+  NETWORKPOLICIES,
   DEMO_LOGS,
   metricsFor,
   overview,
+  buildOverview,
 };

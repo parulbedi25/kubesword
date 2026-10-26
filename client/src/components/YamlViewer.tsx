@@ -1,77 +1,109 @@
-import React, { useState, Suspense } from 'react';
-import { lazyWithRetry } from '../lib/lazyRetry';
-const Editor = lazyWithRetry(() => import('./MonacoEditor'));
+import React, { Suspense, useState } from 'react';
+import { Download, Pencil, Check, X } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Check, Save } from 'lucide-react';
 import { useCluster } from '../context/ClusterContext';
 import { k8s } from '../lib/api';
+import { lazyWithRetry } from '../lib/lazyRetry';
 import { Loading, ErrorBox } from './ui';
 
-export function YamlViewer({ kind, namespace, name }: { kind: string; namespace: string; name: string }) {
-  const { current, isDemo } = useCluster();
-  const qc = useQueryClient();
-  const [copied, setCopied] = useState(false);
-  const [edited, setEdited] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
+// Monaco is the only code-split chunk (~5 MB, loaded on demand). Both the
+// loader config AND the editor import must be dynamic — a static import of
+// '../lib/monaco' would drag all of monaco-editor into the main bundle.
+const Editor = lazyWithRetry(() =>
+  import('../lib/monaco').then(() =>
+    import('@monaco-editor/react').then((m) => ({ default: m.default })),
+  ),
+);
 
-  const query = useQuery({
+interface Props {
+  kind: string;
+  namespace: string;
+  name: string;
+  height?: number;
+}
+
+export function YamlViewer({ kind, namespace, name, height = 480 }: Props) {
+  const { current } = useCluster();
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['yaml', current, kind, namespace, name],
     queryFn: () => k8s.yaml(current, kind, namespace, name),
   });
 
-  if (query.isLoading) return <Loading />;
-  if (query.isError) return <ErrorBox error={query.error} onRetry={() => query.refetch()} />;
+  const text = typeof data === 'string' ? data : '';
+  const shown = draft ?? text;
 
-  const value = edited ?? (query.data as string);
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const download = () => {
+    const blob = new Blob([shown], { type: 'text/yaml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name}.yaml`;
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   const save = async () => {
-    if (edited == null) return;
     setSaving(true);
-    setMsg('');
+    setSaveMsg('');
     try {
-      const res = await k8s.apply(current, edited);
-      const failed = res.results.filter((r: any) => r.status === 'failed');
-      setMsg(failed.length ? `Failed: ${failed.map((f: any) => f.error).join('; ')}` : 'Applied successfully');
-      qc.invalidateQueries();
-    } catch (e: any) {
-      setMsg(`Error: ${e.message}`);
+      const res = await k8s.apply(current, draft ?? text);
+      const first = res.results?.[0];
+      if (first?.error) setSaveMsg(`Apply failed: ${first.error}`);
+      else {
+        setSaveMsg('Applied successfully.');
+        setEditing(false);
+        setDraft(null);
+        qc.invalidateQueries({ queryKey: ['yaml'] });
+      }
+    } catch (e) {
+      setSaveMsg(`Apply failed: ${e instanceof Error ? e.message : e}`);
     } finally {
       setSaving(false);
     }
   };
 
+  if (isLoading) return <Loading label="Loading YAML…" />;
+  if (error) return <ErrorBox error={error} onRetry={() => refetch()} />;
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-base-700/60">
-        <span className="text-xs text-slate-500 font-mono">{kind}/{name}.yaml</span>
-        <div className="flex-1" />
-        <button className="ks-btn-ghost !py-1.5 !text-xs" onClick={copy}>
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />} Copy
-        </button>
-        {!isDemo && (
-          <button className="ks-btn-primary !py-1.5 !text-xs" disabled={edited == null || saving} onClick={save}>
-            <Save className="w-3.5 h-3.5" /> {saving ? 'Applying…' : 'Apply'}
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        {!editing ? (
+          <button onClick={() => { setEditing(true); setDraft(text); }} className="ks-btn-ghost !py-1.5 !text-xs">
+            <Pencil className="w-3.5 h-3.5" /> Edit & apply
           </button>
+        ) : (
+          <>
+            <button onClick={save} disabled={saving} className="ks-btn-primary !py-1.5 !text-xs disabled:opacity-60">
+              <Check className="w-3.5 h-3.5" /> {saving ? 'Applying…' : 'Apply changes'}
+            </button>
+            <button
+              onClick={() => { setEditing(false); setDraft(null); setSaveMsg(''); }}
+              className="ks-btn-ghost !py-1.5 !text-xs"
+            >
+              <X className="w-3.5 h-3.5" /> Cancel
+            </button>
+          </>
         )}
-        {edited != null && <button className="ks-btn-ghost !py-1.5 !text-xs" onClick={() => setEdited(null)}>Reset</button>}
+        <button onClick={download} className="ks-btn-ghost !py-1.5 !text-xs" title="Download YAML">
+          <Download className="w-3.5 h-3.5" />
+        </button>
+        {saveMsg && <span className="text-xs text-slate-400">{saveMsg}</span>}
       </div>
-      {msg && <div className="px-4 py-1.5 text-xs bg-base-800 text-slate-300 border-b border-base-700/60">{msg}</div>}
-      <div className="min-h-[400px]">
+      <div className="rounded-lg overflow-hidden border border-base-700/60">
         <Suspense fallback={<Loading label="Loading editor…" />}>
           <Editor
-            height="480px"
+            height={height}
             language="yaml"
             theme="vs-dark"
-            value={value}
-            onChange={(v) => setEdited(v ?? '')}
-            options={{ minimap: { enabled: false }, fontSize: 12, scrollBeyondLastLine: false, wordWrap: 'on' }}
+            value={shown}
+            onChange={(v) => editing && setDraft(v ?? '')}
+            options={{ readOnly: !editing, minimap: { enabled: false }, fontSize: 12, scrollBeyondLastLine: false, automaticLayout: true }}
           />
         </Suspense>
       </div>

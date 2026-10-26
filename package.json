@@ -5,6 +5,10 @@
   "author": "KubeSword Contributors",
   "license": "MIT",
   "private": true,
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "workspaces": [
     "client",
     "server"
@@ -12,6 +16,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "node scripts/start.js",
+    "smoke": "node scripts/smoke.js",
     "desktop": "electron .",
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "dev:electron": "concurrently -n server,client,electron -c blue,green,magenta \"npm run dev -w server\" \"npm run dev -w client\" \"wait-on http://localhost:5173 http://localhost:3001/api/health && electron .\"",
@@ -27,9 +32,7 @@
     "dist:mac:intel": "npm run build && electron-builder --mac --x64",
     "dist:mac:all": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux",
-    "pack": "npm run build && electron-builder --dir",
-    "test": "npm run test -w server --if-present && npm run test -w client --if-present",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx || true"
+    "pack": "npm run build && electron-builder --dir"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -38,7 +41,7 @@
     "wait-on": "^7.2.0"
   },
   "optionalDependencies": {
-    "electron": "^32.1.2"
+    "electron": "^32.3.3"
   },
   "build": {
     "appId": "com.kubesword.app",
@@ -83,6 +86,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "KubeSword"
+    },
+    "portable": {
+      "artifactName": "KubeSword-${version}-win-${arch}-portable.${ext}",
+      "requestExecutionLevel": "user"
     },
     "mac": {
       "target": [

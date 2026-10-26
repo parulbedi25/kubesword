@@ -1,10 +1,11 @@
 import { lazy } from 'react';
 
 /**
- * React.lazy with retries: transient chunk-load failures (dev-server hiccup,
- * flaky network, brief restart) are retried instead of instantly blanking
- * the UI. If the chunk is genuinely gone (stale deploy), reload once per
- * session to fetch fresh assets, then let the error boundary take over.
+ * React.lazy with retries, used for the on-demand Monaco editor chunk.
+ * Transient load failures (dev-server hiccup, flaky network, brief restart)
+ * are retried instead of instantly erroring. If the chunk is genuinely gone
+ * (stale deploy), reload once per session to fetch fresh assets, then let
+ * the error boundary take over.
  */
 export function lazyWithRetry<T extends { default: React.ComponentType<any> }>(
   importer: () => Promise<T>,
@@ -14,7 +15,7 @@ export function lazyWithRetry<T extends { default: React.ComponentType<any> }>(
     attempt(importer, retries).catch((err) => {
       if (isChunkError(err) && !consumeReloadFlag()) {
         window.location.reload();
-        // Return a never-resolving promise while the reload happens.
+        // Never-resolving promise while the reload happens.
         return new Promise<T>(() => {});
       }
       throw err;
