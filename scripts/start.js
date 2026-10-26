@@ -239,7 +239,10 @@ async function main() {
       'API server',
       spawnTagged('server', '\x1b[34m', process.execPath, ['server/src/index.js'], {
         cwd: ROOT,
-        env: { ...process.env, PORT: String(API_PORT) },
+        // KUBESWORD_DEV makes the server redirect / to the UI, so opening
+        // either address loads the app. The explicit UI URL keeps custom
+        // ports working.
+        env: { ...process.env, PORT: String(API_PORT), KUBESWORD_DEV: '1', KUBESWORD_UI_URL: UI_URL },
       }),
       spawnServer,
     );
@@ -272,7 +275,8 @@ async function main() {
     return;
   }
 
-  console.log(`\n  ⚔️  KubeSword is running at ${UI_URL}  (API: http://localhost:${API_PORT})\n`);
+  console.log(`\n  ⚔️  KubeSword is running at ${UI_URL}  (API: http://localhost:${API_PORT})`);
+  console.log(`  Opening either address loads the app.\n`);
   if (!noOpen()) openBrowser(UI_URL);
 }
 
