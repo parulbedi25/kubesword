@@ -64,7 +64,8 @@ npm run dist:linux # KubeSword-*-linux-x64.deb (+ AppImage)
 Installers land in `release/`. CI (`.github/workflows/build.yml`) builds all OS targets on every push and attaches them to GitHub Releases on tags like `v1.0.0`.
 
 Notes:
-- The backend ships as a **single bundled file** (no `node_modules` in the package), so the DMG stays lean, launches fast, and works fully offline on Apple Silicon.
+- The backend ships as a **single bundled file** (no `node_modules` in the package), so the installers stay lean, launch fast, and work fully offline.
+- **Windows portable**: a single `KubeSword-*-portable.exe` — no install, no admin rights. It keeps its profile and uploaded kubeconfigs in a `KubeSwordData` folder next to the exe (USB-stick friendly; delete the folder to fully reset the app).
 - The UI is code-split per route: the initial download is ~270 kB of JS (gzipped ~90 kB); charts, terminal, and the YAML editor load on demand.
 - Run the desktop shell from source with `npm run desktop` (builds first via `npm run build` if needed).
 - Desktop dev mode (Electron + hot reload): `npm run dev:electron`.

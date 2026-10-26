@@ -21,6 +21,8 @@
     "build:server": "npm run build -w server",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
+    "dist:win:installer": "npm run build && electron-builder --win nsis",
+    "dist:win:portable": "npm run build && electron-builder --win portable",
     "dist:mac": "npm run build && electron-builder --mac --arm64",
     "dist:mac:intel": "npm run build && electron-builder --mac --x64",
     "dist:mac:all": "npm run build && electron-builder --mac",
@@ -75,6 +77,7 @@
       "artifactName": "KubeSword-${version}-win-${arch}.${ext}"
     },
     "nsis": {
+      "artifactName": "KubeSword-${version}-win-${arch}-setup.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
