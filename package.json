@@ -51,7 +51,8 @@
     "npmRebuild": false,
     "asar": true,
     "asarUnpack": [
-      "server/dist/**/*"
+      "server/dist/**/*",
+      "client/dist/**/*"
     ],
     "directories": {
       "output": "release"

@@ -14,6 +14,7 @@
 const express = require('express');
 const yaml = require('js-yaml');
 const mock = require('./mock-data');
+const { createCache } = require('./cache');
 
 // ---------------------------------------------------------------------------
 // Kind registry
@@ -122,6 +123,25 @@ function fmtMem(bytes) {
 function createApiRouter(manager) {
   const router = express.Router();
 
+  // Read caches: lists + overview are the hot path against slow/remote
+  // clusters. Short TTLs keep data fresh; any successful mutation below
+  // clears them, so reads-after-write never go stale.
+  const overviewCache = createCache(10000);
+  const listCache = createCache(5000);
+  const metricsCache = createCache(10000);
+  const invalidateCaches = () => {
+    overviewCache.clear();
+    listCache.clear();
+    metricsCache.clear();
+  };
+  router.use((req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') return next();
+    res.on('finish', () => {
+      if (res.statusCode < 400) invalidateCaches();
+    });
+    next();
+  });
+
   // ---------------- cluster management ----------------
   router.get('/clusters', (req, res) => {
     res.json({ current: manager.currentContext, clusters: manager.listClusters() });
@@ -169,30 +189,39 @@ function createApiRouter(manager) {
     const conn = manager.get(req.params.cluster);
     if (conn.isDemo) return res.json({ ...mock.overview(), isDemo: true });
 
-    const [nodes, namespaces, pods, deps, sts, ds, jobs, cron, events] = await tryAll([
-      () => conn.coreV1.listNode().then(itemsOf),
-      () => conn.coreV1.listNamespace().then(itemsOf),
-      () => conn.coreV1.listPodForAllNamespaces().then(itemsOf),
-      () => conn.appsV1.listDeploymentForAllNamespaces().then(itemsOf),
-      () => conn.appsV1.listStatefulSetForAllNamespaces().then(itemsOf),
-      () => conn.appsV1.listDaemonSetForAllNamespaces().then(itemsOf),
-      () => conn.batchV1.listJobForAllNamespaces().then(itemsOf),
-      () => conn.batchV1.listCronJobForAllNamespaces().then(itemsOf),
-      () => conn.coreV1.listEventForAllNamespaces().then(itemsOf),
+    const cacheKey = `overview:${req.params.cluster}`;
+    const cached = overviewCache.get(cacheKey);
+    if (cached) {
+      res.set('X-KubeSword-Cache', 'HIT');
+      return res.json(cached);
+    }
+
+    const [lists, version] = await Promise.all([
+      tryAll([
+        () => conn.coreV1.listNode().then(itemsOf),
+        () => conn.coreV1.listNamespace().then(itemsOf),
+        () => conn.coreV1.listPodForAllNamespaces().then(itemsOf),
+        () => conn.appsV1.listDeploymentForAllNamespaces().then(itemsOf),
+        () => conn.appsV1.listStatefulSetForAllNamespaces().then(itemsOf),
+        () => conn.appsV1.listDaemonSetForAllNamespaces().then(itemsOf),
+        () => conn.batchV1.listJobForAllNamespaces().then(itemsOf),
+        () => conn.batchV1.listCronJobForAllNamespaces().then(itemsOf),
+        () => conn.coreV1.listEventForAllNamespaces().then(itemsOf),
+      ]),
+      conn.versionApi.getCode().then((v) => v.body && v.body.gitVersion).catch(() => 'unknown'),
     ]);
-    let version;
-    try {
-      const v = await conn.versionApi.getCode();
-      version = v.body && v.body.gitVersion;
-    } catch { version = 'unknown'; }
-    res.json({
+    const [nodes, namespaces, pods, deps, sts, ds, jobs, cron, events] = lists;
+    const payload = {
       ...mock.buildOverview({
         nodes: nodes.length, namespaces: namespaces.length, pods,
         deployments: deps.length, statefulsets: sts.length, daemonsets: ds.length,
         jobs: jobs.length, cronjobs: cron.length, version, events,
       }),
       isDemo: false,
-    });
+    };
+    overviewCache.set(cacheKey, payload);
+    res.set('X-KubeSword-Cache', 'MISS');
+    res.json(payload);
   }));
 
   // ---------------- generic list: GET /:cluster/<kind>?namespace= ----------------
@@ -210,6 +239,12 @@ function createApiRouter(manager) {
       const items = (def.demo || []).filter((i) => allNs(ns) || i.metadata?.namespace === ns);
       return res.json({ items: [...items].sort(byAgeDesc), isDemo: true });
     }
+    const cacheKey = `list:${cluster}:${kind}:${ns}`;
+    const cached = listCache.get(cacheKey);
+    if (cached) {
+      res.set('X-KubeSword-Cache', 'HIT');
+      return res.json(cached);
+    }
     const api = conn[def.api];
     const items =
       def.namespaced && !allNs(ns) ? itemsOf(await api[def.listNs](ns)) : itemsOf(await api[def.listAll]());
@@ -217,7 +252,10 @@ function createApiRouter(manager) {
     const sorted = [...scoped].sort(byAgeDesc);
     // Events can number in the thousands; newest-first with a sane cap.
     const out = kind === 'events' ? sorted.slice(0, 500) : sorted;
-    res.json({ items: out, isDemo: false });
+    const payload = { items: out, isDemo: false };
+    listCache.set(cacheKey, payload);
+    res.set('X-KubeSword-Cache', 'MISS');
+    res.json(payload);
   }));
 
   // ---------------- single resource: read / delete ----------------
@@ -369,6 +407,12 @@ function createApiRouter(manager) {
         isDemo: true,
       });
     }
+    const cacheKey = `metrics:nodes:${req.params.cluster}`;
+    const cached = metricsCache.get(cacheKey);
+    if (cached) {
+      res.set('X-KubeSword-Cache', 'HIT');
+      return res.json(cached);
+    }
     try {
       const [m, nodes] = await Promise.all([
         conn.customObjects.listClusterCustomObject('metrics.k8s.io', 'v1beta1', 'nodes'),
@@ -390,7 +434,10 @@ function createApiRouter(manager) {
           memPct: memCap > 0 ? Math.round((memUsed / memCap) * 100) : undefined,
         };
       });
-      res.json({ items, isDemo: false });
+      const payload = { items, isDemo: false };
+      metricsCache.set(cacheKey, payload);
+      res.set('X-KubeSword-Cache', 'MISS');
+      res.json(payload);
     } catch (e) {
       res.json({ items: [], isDemo: false, unavailable: true, message: 'metrics-server not available' });
     }

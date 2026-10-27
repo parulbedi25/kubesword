@@ -18,6 +18,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install --no-audit --no-fund
+      - run: npm run smoke
+      - run: npm test -w server
       - run: npm run build
 
   desktop:

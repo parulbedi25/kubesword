@@ -73,6 +73,19 @@ async function startServer() {
   }
   console.log(`[kubesword] starting server ${entry} on port ${serverPort}`);
   const kubeswordData = serverDataDir(portableDataDir);
+  // The server child runs as plain node (ELECTRON_RUN_AS_NODE), so it cannot
+  // read inside app.asar — point it at the unpacked UI explicitly. (The
+  // server also probes relative paths as a fallback.)
+  let uiDirEnv = {};
+  try {
+    const unpackedUi = path.join(process.resourcesPath || '', 'app.asar.unpacked/client/dist');
+    if (!isDev && fs.existsSync(path.join(unpackedUi, 'index.html'))) {
+      console.log(`[kubesword] packaged UI found at ${unpackedUi}`);
+      uiDirEnv = { KUBESWORD_UI_DIR: unpackedUi };
+    } else if (!isDev) {
+      console.warn(`[kubesword] WARNING: packaged UI not found at ${unpackedUi} — the window may show the API page instead of the app. Rebuild with "npm run build" first.`);
+    }
+  } catch { /* fall through to server-side probing */ }
   serverChild = spawn(process.execPath, [entry], {
     env: {
       ...process.env,
@@ -80,6 +93,7 @@ async function startServer() {
       HOST: '127.0.0.1',
       ELECTRON_RUN_AS_NODE: '1',
       ...(kubeswordData ? { KUBESWORD_DATA: kubeswordData } : {}),
+      ...uiDirEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
