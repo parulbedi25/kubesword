@@ -101,6 +101,8 @@ npm run smoke    # boots the real server on a temp port and checks every API + W
 ```
 
 - **Blank / stuck on "Loading"**: hard-refresh (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>). The loading screen reports startup failures instead of hanging silently — check the console (<kbd>F12</kbd>) for details. If you use the production build (`npm run web`), rebuild once with `npm run build` first.
+- **Desktop app shows an API/JSON page instead of the UI**: your installer predates the packaging fix — download a fresh installer from the latest GitHub Release (or rebuild with `npm run dist:*`). No data is lost; your clusters live outside the app.
+- **Slow data loading**: `npm run web` (production build) is much faster than `npm start` (dev mode). The server also caches reads for a few seconds; any change you make (delete, scale, apply) clears the cache immediately.
 - **"Node.js is too old"**: install the current LTS from https://nodejs.org, then re-run `npm install`.
 - **"port is already in use"**: another program owns that port — stop it, or run with a different one (`PORT=3101 CLIENT_PORT=5210 npm start`). If it's a leftover KubeSword, `npm start` reuses it automatically.
 - **`npm install` failing on the Electron download** (restricted networks): the browser version doesn't need Electron at all — set `ELECTRON_SKIP_BINARY_DOWNLOAD=1` and re-run install. You only need the Electron binary for `npm run desktop` / `npm run dist*`.

@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "start:src": "node src/index.js",
     "build": "node scripts/build.js",
-    "test": "node --test test/ 2>&1 | head -50"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@kubernetes/client-node": "^0.22.0",

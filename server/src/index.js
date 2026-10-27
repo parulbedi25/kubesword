@@ -65,6 +65,7 @@ function createApp(manager) {
       res.sendFile(path.join(staticDir, 'index.html'));
     });
   } else {
+    console.warn(`[kubesword] WARNING: built UI not found (serving API only). Looked in:\n  - ${webUiCandidates().join('\n  - ')}`);
     app.get('/', (req, res) => res.type('html').send(noUiPage(uiUrl)));
   }
 
@@ -81,19 +82,26 @@ function createApp(manager) {
 }
 
 // The built UI lives in different places per distribution:
+//   explicit           -> KUBESWORD_UI_DIR (checked first; the Electron shell
+//                         passes the unpacked UI dir here)
 //   repo dev / Docker  -> <repo>/client/dist
-//   esbuild bundle     -> server/dist/index.js, UI alongside at server/../client/dist
-//   Electron package   -> resources/client/dist
-//   custom             -> KUBESWORD_UI_DIR (checked first)
-function findWebUi() {
-  const candidates = [
+//   esbuild bundle     -> server/dist/index.js, UI alongside at ../client/dist
+//   Electron package   -> <unpacked>/client/dist, resolved via the server
+//                         bundle's own location (the server runs as plain node
+//                         and cannot read inside app.asar, so the UI ships
+//                         unpacked — see asarUnpack in package.json)
+function webUiCandidates() {
+  return [
     process.env.KUBESWORD_UI_DIR,
     path.join(__dirname, '../../client/dist'),
     path.join(__dirname, '../client/dist'),
     typeof process.resourcesPath === 'string' && path.join(process.resourcesPath, 'client/dist'),
     path.join(__dirname, 'public'),
   ].filter(Boolean);
-  return candidates.find((d) => {
+}
+
+function findWebUi() {
+  return webUiCandidates().find((d) => {
     try {
       return fs.existsSync(path.join(d, 'index.html'));
     } catch {
